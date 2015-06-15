@@ -1,14 +1,14 @@
 from copy import deepcopy
-import common
-from common import *
+import containers.common
+from containers.common import *
+from containers.vms import *
 import logging
 import yaml
 
 
 class TopologyReader(object):
-    vm_types = {"csr1000": common.CSR1000,
-                "vyatta5400": common.Vyatta5400,
-                "vyatta5600": common.Vyatta5600}
+    vm_types = {"csr1000": CSR1000,
+                "vyatta5600": Vyatta5600}
 
     def __init__(self, config_path, ifaces_naming=None):
         self.config = yaml.load(open(config_path).read())

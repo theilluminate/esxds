@@ -26,8 +26,9 @@ import re
 import subprocess
 import time
 from time import sleep
+from containers.common import ESX
 from sdk2 import ExistenceException, DSApi, error_handler
-from topology_reader_yaml import TopologyReader, ESX
+from topology_reader_yaml import TopologyReader
 
 try:
     import pexpect

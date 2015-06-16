@@ -3,6 +3,7 @@ import atexit
 
 import logging
 from multiprocessing import Queue
+import os
 from random import randint
 from time import sleep
 import urllib2
@@ -674,9 +675,8 @@ class DSApi:
             print snap.description
 
 
-    def deploy_ovf(self, vm_name, url, esx_name, resource_pool, datastore,
+    def deploy_ovf(self, vm_name, path, esx_name, resource_pool, datastore,
                    network_mapping=None):
-        raise NotImplementedError
         if not network_mapping:
             network_mapping = {}
         host_mor = self._get_host_mor(esx_name)
@@ -696,7 +696,7 @@ class DSApi:
             networkMapping=ovf_net_mapping,
             diskProvisioning="thin")
 
-        ovf_data = urllib2.urlopen(url).read()
+        ovf_data = open(path, "r").read()
 
         import_spec = self._get_ovf_manager_mor().CreateImportSpec(
             ovfDescriptor=ovf_data,
@@ -706,22 +706,51 @@ class DSApi:
         if import_spec.error:
             raise OfvImportException()
         for warning in import_spec.warning:
-            logging.warning("OVF Warning: " + warning.localizedMessage.chomp)
+            logging.warning("OVF Warning: " + warning.msg)
         nfc_lease = pool_mor.ImportVApp(spec=import_spec.importSpec,
                                         folder=vm_folder,
                                         host=host_mor)
         self._wait_until(nfc_lease.state, "initializing")
         if nfc_lease.state == "error":
             raise nfc_lease.error
-        nfc_lease.HttpNfcLeaseComplete()
-        return
+
         nfc_lease.HttpNfcLeaseProgress(percent=5)
         for file_item in import_spec.fileItem:
-            self._wait_until(nfc_lease.state, "ready")
+            while nfc_lease.state != "ready":
+                sleep(1)
+
             device_url = [device for device in nfc_lease.info.deviceUrl
                           if device.importKey == file_item.deviceId]
+            if not device_url or len(device_url)>1:
+                raise Exception()
+            else:
+                device_url = device_url[0].url
+            method = "PUT" if file_item.create else "POST"
+            method = "POST"
+            file_location = "/".join(path.split("/")[:-1]) + "/" + file_item.path
+            template = "curl -L file://{local} | curl -Ss -X {method} --insecure -T - -H " \
+                       "'Content-Type: application/x-vnd.vmware-streamVmdk' " \
+                       "'{remote}'".format(local=file_location,
+                                           method=method, remote=device_url)
+            template = "cat {local} | curl -Ss -X {method} --insecure -T - -H " \
+                       "'Content-Type: application/x-vnd.vmware-streamVmdk' " \
+                       "'{remote}'".format(local=file_location,
+                                           method=method, remote=device_url)
+            print template
+            os.system(template)
+
+        nfc_lease.HttpNfcLeaseComplete()
+        return
 
 if __name__ == "__main__":
     ds = DSApi("172.18.93.40", "root", "vmware")
-    ds.create_vm("netw_test", "172.18.93.30","datastore1",
-                 networks=["VLAN1006","qweqwe"])
+    # ds.create_vm("netw_test", "172.18.93.30","datastore1",
+    #              networks=["VLAN1006","qweqwe"])
+    try:
+        ds.destroy_vm("ovf_test")
+    except:
+        pass
+    ds.deploy_ovf("ovf_test",
+                  "/home/vkhlyunev/temp/ovf/csr1000v-universalk9.03.12.00.S.154-2.S-std.ovf",
+                  "172.18.93.30","/", "datastore1",
+                  {"GigabitEthernet1":"VLAN1006"})
